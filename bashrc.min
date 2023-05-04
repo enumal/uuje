@@ -30,7 +30,7 @@ SettingsCommon()
         local force="$3"   # optional, values: "yes" "no" "", "" means "yes"
         local alias="builtin alias"
 
-        [ "$force" = "" ] && force=yess
+        [ "$force" = "" ] && force=yes
 
         if [ -n "$name" ] ; then
             if [ -n "$def" ] ; then
