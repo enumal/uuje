@@ -146,18 +146,16 @@ SettingsCommon()
         esac
     }
 
-    mcd_initializer() {
-        if true ; then
-            Alias cd mcd                                   # replace cd with mcd
-        else
-            if shopt -q cdable_vars; then
-                complete -v -F _cd -o nospace mcd
-            else
-                complete -F _cd -o nospace mcd
-            fi
-        fi
-    }
-    mcd_initializer && unset -f mcd_initializer
+    #mcd_initializer() {
+    #    if false ; then
+    #        if shopt -q cdable_vars; then
+    #            complete -v -F _cd -o nospace mcd
+    #        else
+    #            complete -F _cd -o nospace mcd
+    #        fi
+    #    fi
+    #}
+    #mcd_initializer && unset -f mcd_initializer
 
     lsd()   { find . -type d -exec ls -ld {} \; ; }
     drw()   {
@@ -202,6 +200,7 @@ SettingsCommon()
 
     Alias bat            "bat -n"
     Alias branch         "pacman-conf --repo-list | grep '^testing$' || echo stable"
+    Alias cd             "mcd"                                                         # replace cd with mcd
     Alias ci             "ci -u"
     Alias cls            "clear"
     Alias df             "df -hT"
