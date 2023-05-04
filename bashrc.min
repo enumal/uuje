@@ -2,16 +2,20 @@
 
 # Some convenient bash settings.
 
-
 SettingsCommon()
 {
+    echo "==> $FUNCNAME" >&2
     case "$-" in
         *i*)
             # history commands with arrow keys (on an interactive shell)
-            bind '"\e[A":history-search-backward'
-            bind '"\e[B":history-search-forward'
+            bind '"\e[A":history-search-backward'      # up arrow
+            bind '"\e[B":history-search-forward'       # down arrow
+
+            bind 'set show-all-if-ambiguous on'        # complete with single TAB
+            bind 'set mark-symlinked-directories on'   # complete directory symlinks with slash
             ;;
     esac
+    shopt -s autocd
 
     #############################################################
     # functions
@@ -19,17 +23,43 @@ SettingsCommon()
 
     Alias()
     {
-        # alias usage helper
-        if [ -n "$1" ] ; then
-            if [ -n "$2" ] ; then
-                builtin alias "$1"="$2"
+        local name="$1"
+        local def="$2"
+        local force="$3"   # optional, values: "yes" "no" "", "" means "yes"
+        local alias="builtin alias"
+
+        [ "$force" = "" ] && force=yess
+
+        if [ -n "$name" ] ; then
+            if [ -n "$def" ] ; then
+                if [ "$force" = "yes" ] ; then
+                    $alias "$name"="$def"    # assign alias only if name is "free"
+                    return
+                fi
+                local defold=$(LANG=C type "$name" 2>/dev/null | head -n1)
+                if [ -z "$defold" ] ; then
+                    $alias "$name"="$def"    # assign alias only if name is "free"
+                    return
+                fi
+                echo "Warning: $FUNCNAME: Overriding old definition: '$defold'." >&2
             else
-                builtin alias "$1"
+                $alias "$name"
             fi
         else
-            builtin alias
+            $alias
         fi
     }
+    Unalias() { alias "$1" &> /dev/null && unalias "$1" ; }
+
+    Unalias type
+    type() {
+        # without parameters, show all aliases and functions
+        case "$1" in
+            "") { alias && declare -F ; } | less ;;
+            *) builtin type -a "$@" ;;
+        esac
+    }
+
     ..()
     {
         # cd to one of the parent folders, given number of levels (zero or more)
@@ -58,7 +88,7 @@ SettingsCommon()
         cd $dir
     }
 
-    o() { exo-open "$@" 2>/dev/null & }      # open any file (based on mime stuff)
+    open-anything() { setsid exo-open "$@" 2>/dev/null ; }      # open any file (based on mime stuff)
 
     mcd() {
         # Enhances 'cd' by refusing to go to specified folder(s).
@@ -118,7 +148,7 @@ SettingsCommon()
 
     mcd_initializer() {
         if true ; then
-            alias cd=mcd                                  # replace cd with mcd
+            Alias cd mcd                                   # replace cd with mcd
         else
             if shopt -q cdable_vars; then
                 complete -v -F _cd -o nospace mcd
@@ -129,17 +159,21 @@ SettingsCommon()
     }
     mcd_initializer && unset -f mcd_initializer
 
-    paq() {
-        local dir=$(pacconf --repo=endeavouros | grep file:// | sed 's|.*file://||')
-        if [ -n "$dir" ] ; then
-            echo "update local endeavouros repo" >&2
-            {
-                pushd "$dir"
-                git pull
-                popd
-            } >/dev/null
+    lsd()   { find . -type d -exec ls -ld {} \; ; }
+    drw()   {
+        # shellcheck disable=SC2010
+        ls -l "$@" | grep rw
+    }
+
+    lsblk() {
+        local width=300
+        local lsblk="/usr/bin/lsblk -w$width"
+
+        if [ -z "$1" ] ; then
+            $lsblk -f -o+SIZE
+        else
+            $lsblk "$@"
         fi
-        sudo /usr/bin/paq "$@"
     }
 
     #############################################################
@@ -147,6 +181,9 @@ SettingsCommon()
     #############################################################
 
     [ -z "$FUNCNEST" ] && export FUNCNEST=100
+    export HISTCONTROL="erasedups"
+    FIGNORE=".o:~"                      # ignored suffixes in filename completion
+
 
     CDPATH="${CDPATH[*]}"
     CDPATH="${CDPATH// /:}"
@@ -161,27 +198,66 @@ SettingsCommon()
     # aliases
     #############################################################
 
-    Alias cls      "clear"
-    Alias ci       "ci -u"
-    Alias df       "df -hT"
-    Alias l        "ls -lav --ignore=.?*"   # show long listing but no hidden dotfiles except "."
-    Alias ll       "ls -lav --ignore=.."    # show long listing of all except ".."
-    Alias ls       "ls --color=auto"
-    Alias md       "ghostwriter"
-    Alias o        "OpenFiles"
-    Alias pacdiff  "eos-pacdiff"
-    Alias p        "pacman-ext --extras --no-banner --expac"
-    Alias poweroff "sync && poweroff"
-    Alias reboot   "sync && reboot"
-    Alias sou      "source ~/.bashrc"
-    Alias welcome  "setsid eos-welcome --once"
+    echo "==> $FUNCNAME: aliases" >&2
+
+    Alias bat            "bat -n"
+    Alias branch         "pacman-conf --repo-list | grep '^testing$' || echo stable"
+    Alias ci             "ci -u"
+    Alias cls            "clear"
+    Alias df             "df -hT"
+    Alias history-del    "history -c && history -w"
+    Alias hlp            "eos-apps-info-helper"
+    Alias inxi           "inxi -z"
+    Alias l              "ls -lav --ignore=.?*"   # show long listing but no hidden dotfiles except "."
+    Alias ll             "ls -lav --ignore=.."    # show long listing of all except ".."
+    Alias ls             "ls --color=auto"
+    Alias md             "ghostwriter"
+    Alias meld           "meld-rcs"
+    Alias nano           "nano -l"
+    Alias o              "open-anything"
+    Alias pacdiff        "eos-pacdiff"
+    Alias p              "pacman-ext --extras --no-banner --expac"
+    Alias paq            "sudo paq"
+    Alias poweroff       "sync && poweroff"
+    Alias reboot         "sync && reboot"
+    Alias ramsleep       "Power-routines suspend"
+    Alias sou            "source ~/.bashrc"
+    Alias welcome        "setsid eos-welcome --once"
+
+    if true ; then
+        Alias cp         "cp -i"
+        Alias ln         "ln -i"
+        Alias mv         "mv -i"
+        Alias rm         "rm -i"
+    fi
+
+    if type logstuff &> /dev/null ; then
+        alias reboot='logstuff off && sync && Power-routines reboot'
+        alias poweroff='logstuff off && sync && Power-routines poweroff'
+    fi
 
     #############################################################
     # bash completions
     #############################################################
 
-    source /usr/share/bash-completion/completions/pacman-ext
-    complete -F _pacman-ext_ p
+    echo "==> $FUNCNAME: bash completions" >&2
+
+    LoadCompletion() {
+        local cmdname="$1"
+        local compname="$2"
+        local compfunc="$3"   # optional
+
+        [ -n "$compfunc" ] || compfunc="_${compname}_"
+
+        complete | grep "\-F" | grep " $cmdname$" >/dev/null || {
+            echo "loading $compfunc completion" >&2
+            source /usr/share/bash-completion/completions/$compname
+            complete -F $compfunc $cmdname
+        }
+    }
+
+    LoadCompletion p  pacman-ext _pacman-ext_
+    LoadCompletion rc pkgcheck   _pkgcheck_
 }
 
 type SettingsSystemSpecific &>/dev/null && SettingsSystemSpecific
