@@ -2,30 +2,187 @@
 
 # Some convenient bash settings.
 
-# how to show directory contents:
-alias l='ls -la --ignore=.?*'
-alias ll='ls -la --ignore=..'
 
-# RCS ci feature change:
-alias ci='ci -u'
+SettingsCommon()
+{
+    case "$-" in
+        *i*)
+            # history commands with arrow keys (on an interactive shell)
+            bind '"\e[A":history-search-backward'
+            bind '"\e[B":history-search-forward'
+            ;;
+    esac
 
-# 'sou' is an easy re-read of .bashrc:
-alias sou='source ~/.bashrc'
+    #############################################################
+    # functions
+    #############################################################
 
-# 'o' opens any file for editing (may need pre-configuration with thunar)
-o() { exo-open "$@" 2>/dev/null & }
+    Alias()
+    {
+        # alias usage helper
+        if [ -n "$1" ] ; then
+            if [ -n "$2" ] ; then
+                builtin alias "$1"="$2"
+            else
+                builtin alias "$1"
+            fi
+        else
+            builtin alias
+        fi
+    }
+    ..()
+    {
+        # cd to one of the parent folders, given number of levels (zero or more)
+        # Example: .. 5
 
-# history commands with arrow keys (on an interactive shell):
-case "$-" in
-    *i*)
-        bind '"\e[A":history-search-backward'
-        bind '"\e[B":history-search-forward'
-        ;;
-esac
+        local levels="$1"
+        local -r levels_max=10000
+        case "$levels" in
+            "")
+                levels=1
+                ;;
+            # [0-9] | [1-9]*([0-9]))     # assumes extglob is enabled! Note: emacs reformatting fails with this...
+            #     ;;
+            [0-9] | [1-9][0-9])
+                if [ $levels -gt $levels_max ] ; then
+                    echo "number of levels '$levels' must be less than $levels_max" >&2
+                    return 1
+                fi
+                ;;
+            *)
+                echo "invalid number of levels: '$levels'" >&2
+                return 1
+                ;;
+        esac
+        local dir=$(seq $levels | awk '{printf "../"}')
+        cd $dir
+    }
 
-# prompt shows current directory (different for root):
-if [ $(id -u) -ne 0 ] ; then
-    PS1='\w> '
-else
-    PS1='ROOT# \w> '
-fi
+    o() { exo-open "$@" 2>/dev/null & }      # open any file (based on mime stuff)
+
+    mcd() {
+        # Enhances 'cd' by refusing to go to specified folder(s).
+        # When called with only one parameter (=the target folder), adds
+        #  - rejection of a target folder with
+        #     - array variable CDPATH_REJECT
+        #     - file $REJECTOR_FILE inside the target folder
+        #  - note: direct child folder will not be rejected
+
+        _IsAllowedDir() {
+            [ -f $REJECTOR_FILE ] && return 1
+            local dir
+            for dir in "${CDPATH_REJECT[@]}" ; do
+                [ "$dir" -ef "$PWD" ] && return 2
+            done
+            return 0
+        }
+        _IsDirectChildDir() {
+            [ ".." -ef "$startdir" ]
+        }
+
+        local newdir="$1"
+        local REJECTOR_FILE=".no-cd"
+        local cd="builtin cd"
+
+        case "$newdir" in
+            -* | "")
+                $cd "$@"
+                ;;
+            *)
+                if [ -z "$2" ] ; then
+                    local ret=0
+                    local startdir="$PWD"                     # used for allowing direct child dir
+
+                    $cd "$newdir" >/dev/null
+                    _IsAllowedDir || ret="$?"
+                    case "$ret" in
+                        0) pwd ;;
+                        *)
+                            if ! _IsDirectChildDir ; then
+                                $cd - >/dev/null              # go back to the original folder
+                                case "$ret" in
+                                    1) echo "Sorry, target folder rejected by file '$REJECTOR_FILE'. Use '$cd' instead." >&2 ;;
+                                    2) echo "Sorry, target folder rejected by variable 'CDPATH_REJECT'. Use '$cd' instead." >&2 ;;
+                                    *) echo "Sorry, target folder rejected by user. Use '$cd' instead." >&2 ;;
+                                esac
+                                return $ret
+                            fi
+                            ;;
+                    esac
+                else
+                    $cd "$@"
+                fi
+                ;;
+        esac
+    }
+
+    mcd_initializer() {
+        if true ; then
+            alias cd=mcd                                  # replace cd with mcd
+        else
+            if shopt -q cdable_vars; then
+                complete -v -F _cd -o nospace mcd
+            else
+                complete -F _cd -o nospace mcd
+            fi
+        fi
+    }
+    mcd_initializer && unset -f mcd_initializer
+
+    paq() {
+        local dir=$(pacconf --repo=endeavouros | grep file:// | sed 's|.*file://||')
+        if [ -n "$dir" ] ; then
+            echo "update local endeavouros repo" >&2
+            {
+                pushd "$dir"
+                git pull
+                popd
+            } >/dev/null
+        fi
+        sudo /usr/bin/paq "$@"
+    }
+
+    #############################################################
+    # variables
+    #############################################################
+
+    [ -z "$FUNCNEST" ] && export FUNCNEST=100
+
+    CDPATH="${CDPATH[*]}"
+    CDPATH="${CDPATH// /:}"
+
+    prompt_command_helper() {
+        # printf "\r%*.0s " "$((COLUMNS-1))"                            # clear previous line
+        printf -v PS1 "\r{%s}\n%s> " "$PWD" "$(date +%a\ %H:%M.%S)"     # new prompt
+    }
+    PROMPT_COMMAND=(prompt_command_helper)
+
+    #############################################################
+    # aliases
+    #############################################################
+
+    Alias cls      "clear"
+    Alias ci       "ci -u"
+    Alias df       "df -hT"
+    Alias l        "ls -lav --ignore=.?*"   # show long listing but no hidden dotfiles except "."
+    Alias ll       "ls -lav --ignore=.."    # show long listing of all except ".."
+    Alias ls       "ls --color=auto"
+    Alias md       "ghostwriter"
+    Alias o        "OpenFiles"
+    Alias pacdiff  "eos-pacdiff"
+    Alias p        "pacman-ext --extras --no-banner --expac"
+    Alias poweroff "sync && poweroff"
+    Alias reboot   "sync && reboot"
+    Alias sou      "source ~/.bashrc"
+    Alias welcome  "setsid eos-welcome --once"
+
+    #############################################################
+    # bash completions
+    #############################################################
+
+    source /usr/share/bash-completion/completions/pacman-ext
+    complete -F _pacman-ext_ p
+}
+
+type SettingsSystemSpecific &>/dev/null && SettingsSystemSpecific
+SettingsCommon
