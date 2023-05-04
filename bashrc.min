@@ -4,7 +4,7 @@
 
 SettingsCommon()
 {
-    echo "==> $FUNCNAME" >&2
+    [ $VERBOSE = yes ] && echo "==> $FUNCNAME" >&2
     case "$-" in
         *i*)
             # history commands with arrow keys (on an interactive shell)
@@ -16,6 +16,8 @@ SettingsCommon()
             ;;
     esac
     shopt -s autocd
+
+    
 
     #############################################################
     # functions
@@ -41,7 +43,7 @@ SettingsCommon()
                     $alias "$name"="$def"    # assign alias only if name is "free"
                     return
                 fi
-                echo "Warning: $FUNCNAME: Overriding old definition: '$defold'." >&2
+                [ $VERBOSE_ALIAS = yes ] && echo "Warning: $FUNCNAME: Overriding old definition: '$defold'." >&2
             else
                 $alias "$name"
             fi
@@ -196,7 +198,7 @@ SettingsCommon()
     # aliases
     #############################################################
 
-    echo "==> $FUNCNAME: aliases" >&2
+    [ $VERBOSE = yes ] && echo "==> $FUNCNAME: aliases" >&2
 
     Alias bat            "bat -n"
     Alias branch         "pacman-conf --repo-list | grep '^testing$' || echo stable"
@@ -239,7 +241,7 @@ SettingsCommon()
     # bash completions
     #############################################################
 
-    echo "==> $FUNCNAME: bash completions" >&2
+    [ $VERBOSE = yes ] && echo "==> $FUNCNAME: bash completions" >&2
 
     LoadCompletion() {
         local cmdname="$1"
@@ -258,6 +260,14 @@ SettingsCommon()
     LoadCompletion p  pacman-ext _pacman-ext_
     LoadCompletion rc pkgcheck   _pkgcheck_
 }
+
+VERBOSE=no           # common verbosity
+VERBOSE_ALIAS=no     # verbosity specific to Alias()
+
+case "$1" in
+    --verbose)       VERBOSE=yes ;;
+    --verbose-alias) VERBOSE_ALIAS=yes ;;
+esac
 
 type SettingsSystemSpecific &>/dev/null && SettingsSystemSpecific
 SettingsCommon
